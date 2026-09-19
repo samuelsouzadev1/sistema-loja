@@ -84,6 +84,20 @@
   .total-row{display:flex;justify-content:flex-end;align-items:baseline;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
   .total-row .t-label{font-size:12.5px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
   .total-row .t-value{font-family:var(--mono);font-size:24px;font-weight:700;}
+  .order-financials{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+  .financial-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .financial-summary{display:flex;flex-direction:column;gap:8px;margin-top:16px;padding:14px 16px;background:#FAFAF7;border:1px solid var(--border);border-radius:9px;}
+  .financial-line{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;}
+  .financial-line span:first-child{color:var(--ink-soft);}
+  .financial-line strong{font-family:var(--mono);font-size:13.5px;}
+  .financial-line.discount strong{color:var(--accent-ink);}
+  .financial-line.total-discounted{padding-top:8px;border-top:1px solid var(--border);font-size:14px;}
+  .installment-box{margin-top:16px;padding:16px;background:var(--accent-soft);border:1px solid #B7DAD1;border-radius:9px;}
+  .installment-box h3{margin:0 0 12px;font-size:13px;color:var(--accent-ink);}
+  .installment-result{margin-top:12px;padding-top:12px;border-top:1px solid #B7DAD1;display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;}
+  .installment-result .main{grid-column:1 / -1;font-size:16px;}
+  .installment-result strong{font-family:var(--mono);}
+  @media (max-width:640px){.financial-grid,.installment-result{grid-template-columns:1fr;}.installment-result .main{grid-column:auto;}}
 
   .actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
   .btn{border:none;border-radius:9px;padding:11px 20px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:var(--sans);transition:.15s;}
@@ -231,6 +245,32 @@
         <tbody id="itemsBody"></tbody>
       </table>
       <button class="add-row-btn" id="addItemBtn">+ Adicionar item</button>
+
+      <div class="order-financials">
+        <h2>Desconto e parcelamento</h2>
+        <div class="financial-grid">
+          <div class="field"><label>Tipo de desconto</label><select id="pedDescontoTipo"><option value="percentual">Percentual (%)</option><option value="valor">Valor fixo (R$)</option></select></div>
+          <div class="field"><label id="pedDescontoValorLabel">Desconto (%)</label><input type="number" id="pedDescontoValor" min="0" step="0.01" placeholder="Ex: 10"></div>
+        </div>
+        <div class="financial-summary">
+          <div class="financial-line"><span>Preço original</span><strong id="pedPrecoOriginal">R$ 0,00</strong></div>
+          <div class="financial-line discount"><span>Desconto aplicado</span><strong id="pedDescontoAplicado">R$ 0,00</strong></div>
+          <div class="financial-line total-discounted"><span>Preço com desconto</span><strong id="pedTotalComDesconto">R$ 0,00</strong></div>
+        </div>
+        <div class="installment-box">
+          <h3>Simular parcelamento</h3>
+          <div class="financial-grid">
+            <div class="field"><label>Taxa de juros do parcelamento (%)</label><input type="number" id="pedJurosParcelamento" min="0" step="0.01" placeholder="Ex: 6"></div>
+            <div class="field"><label>Quantidade de parcelas</label><input type="number" id="pedQuantidadeParcelas" min="1" step="1" placeholder="Ex: 3"></div>
+          </div>
+          <div class="installment-result">
+            <div class="financial-line main"><span>Total com juros</span><strong id="pedTotalParcelado">R$ 0,00</strong></div>
+            <div class="financial-line"><span>Acréscimo de juros</span><strong id="pedValorJuros">R$ 0,00</strong></div>
+            <div class="financial-line"><span>Valor de cada parcela</span><strong id="pedValorParcela">R$ 0,00</strong></div>
+          </div>
+          <p class="hint" style="margin:10px 0 0;">Ex.: 3x com 6% de juros acrescenta 6% ao preço com desconto. 6x com 9% e 12x com 12% seguem a mesma lógica.</p>
+        </div>
+      </div>
 
       <div class="field-grid" style="margin-top:20px;">
         <div class="field">
@@ -1087,16 +1127,42 @@
     updateTotal();
   }
 
-  function updateTotal(){
-    const total = items.reduce((s,it)=> s + (it.qty * it.price), 0);
-    document.getElementById('orderTotal').textContent = fmtBRL(total);
-    // refresh subtotal cells without full re-render
-    const rows = document.querySelectorAll('#itemsBody tr');
-    rows.forEach((tr, i)=>{
-      const it = items[i];
-      if(it) tr.children[3].textContent = fmtBRL(it.qty * it.price);
-    });
+  function getOrderFinancials(){
+    const originalTotal=items.reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.price)||0),0);
+    const tipo=document.getElementById('pedDescontoTipo')?.value||'percentual';
+    const informado=Math.max(0,Number(document.getElementById('pedDescontoValor')?.value)||0);
+    let desconto=tipo==='valor'?informado:originalTotal*informado/100;
+    desconto=Math.min(desconto,originalTotal);
+    const totalComDesconto=Math.max(0,originalTotal-desconto);
+    const juros=Math.max(0,Number(document.getElementById('pedJurosParcelamento')?.value)||0);
+    const parcelas=Math.max(0,Math.floor(Number(document.getElementById('pedQuantidadeParcelas')?.value)||0));
+    const valorJuros=totalComDesconto*juros/100;
+    const totalParcelado=totalComDesconto+valorJuros;
+    const valorParcela=parcelas>0?totalParcelado/parcelas:0;
+    return {originalTotal,desconto,totalComDesconto,juros,parcelas,valorJuros,totalParcelado,valorParcela};
   }
+  function updateFinancialSummary(){
+    const f=getOrderFinancials();
+    document.getElementById('pedPrecoOriginal').textContent=fmtBRL(f.originalTotal);
+    document.getElementById('pedDescontoAplicado').textContent=fmtBRL(f.desconto);
+    document.getElementById('pedTotalComDesconto').textContent=fmtBRL(f.totalComDesconto);
+    document.getElementById('pedTotalParcelado').textContent=fmtBRL(f.totalParcelado);
+    document.getElementById('pedValorJuros').textContent=fmtBRL(f.valorJuros);
+    document.getElementById('pedValorParcela').textContent=f.parcelas>0?fmtBRL(f.valorParcela):'—';
+    document.getElementById('orderTotal').textContent=fmtBRL(f.totalComDesconto);
+  }
+  function updateTotal(){
+    updateFinancialSummary();
+    const rows=document.querySelectorAll('#itemsBody tr');
+    rows.forEach((tr,i)=>{const it=items[i];if(it)tr.children[3].textContent=fmtBRL(it.qty*it.price);});
+  }
+  function updateDiscountLabel(){
+    const tipo=document.getElementById('pedDescontoTipo').value;
+    document.getElementById('pedDescontoValorLabel').textContent=tipo==='valor'?'Desconto (R$)':'Desconto (%)';
+    updateTotal();
+  }
+  ['pedDescontoValor','pedJurosParcelamento','pedQuantidadeParcelas'].forEach(id=>document.getElementById(id).addEventListener('input',updateTotal));
+  document.getElementById('pedDescontoTipo').addEventListener('change',updateDiscountLabel);
 
   document.getElementById('addItemBtn').addEventListener('click', ()=> addItemRow());
 
@@ -1107,12 +1173,12 @@
   }
   document.getElementById('pedPagamentoStatus').addEventListener('change',updatePaymentFields);
   document.getElementById('pedPercentualPago').addEventListener('input',()=>{
-    const total=items.reduce((s,it)=>s+it.qty*it.price,0);
+    const total=getOrderFinancials().totalComDesconto;
     const pct=parseFloat(document.getElementById('pedPercentualPago').value);
     if(!isNaN(pct)) document.getElementById('pedValorPago').value=(total*pct/100).toFixed(2);
   });
   document.getElementById('pedValorPago').addEventListener('input',()=>{
-    const total=items.reduce((s,it)=>s+it.qty*it.price,0);
+    const total=getOrderFinancials().totalComDesconto;
     const val=parseFloat(document.getElementById('pedValorPago').value);
     if(total>0 && !isNaN(val)) document.getElementById('pedPercentualPago').value=(val/total*100).toFixed(2);
   });
@@ -1134,6 +1200,10 @@
       pedPagamentoStatus: document.getElementById('pedPagamentoStatus').value,
       pedValorPago: document.getElementById('pedValorPago').value,
       pedPercentualPago: document.getElementById('pedPercentualPago').value,
+      pedDescontoTipo: document.getElementById('pedDescontoTipo').value,
+      pedDescontoValor: document.getElementById('pedDescontoValor').value,
+      pedJurosParcelamento: document.getElementById('pedJurosParcelamento').value,
+      pedQuantidadeParcelas: document.getElementById('pedQuantidadeParcelas').value,
       pedObservacoes: document.getElementById('pedObservacoes').value,
       pedPrazo: document.getElementById('pedPrazo').value,
       pedDataMaxPagamento: document.getElementById('pedDataMaxPagamento').value,
@@ -1157,7 +1227,7 @@
     if(!items.length) items = [{id:'it' + (itemSeq++), desc:'', qty:1, price:0}];
 
     ['cliNome','cliContato','cliEndereco','cliDoc','cliData',
-     'pedTipoDocumento','pedPagamentoStatus','pedValorPago','pedPercentualPago',
+     'pedTipoDocumento','pedPagamentoStatus','pedValorPago','pedPercentualPago','pedDescontoTipo','pedDescontoValor','pedJurosParcelamento','pedQuantidadeParcelas',
      'pedObservacoes','pedPrazo','pedDataMaxPagamento','pedFormaPagamento',
      'pedFormaPagamentoRestante'].forEach(id => {
       if(draft[id] != null && document.getElementById(id)){
@@ -1191,6 +1261,11 @@
     document.getElementById('pedPagamentoStatus').value = 'total';
     document.getElementById('pedValorPago').value = '';
     document.getElementById('pedPercentualPago').value = '';
+    document.getElementById('pedDescontoTipo').value='percentual';
+    document.getElementById('pedDescontoValor').value='';
+    document.getElementById('pedJurosParcelamento').value='';
+    document.getElementById('pedQuantidadeParcelas').value='';
+    updateDiscountLabel();
     if(document.getElementById('pedFormaPagamentoRestante')) document.getElementById('pedFormaPagamentoRestante').value = '';
     updatePaymentFields();
     await storageRemove(ORDER_DRAFT_KEY, false);
@@ -1253,29 +1328,38 @@
     clientLines.forEach(line=>{ y = printWrapped(doc, line, marginX, y, contentWidth, 13); });
     y += 8;
 
-    const rows = orderData.items.map(it=>[it.desc, String(it.qty), fmtBRL(it.price), fmtBRL(it.qty * it.price)]);
+    const rows=orderData.items.map(it=>[it.desc,String(it.qty),fmtBRL(it.price),fmtBRL(it.qty*it.price)]);
     doc.autoTable({
-      startY:y, head:[['Descrição','Qtd.','Valor unit.','Subtotal']], body:rows,
+      startY:y,head:[['Descrição','Qtd.','Valor unit.','Subtotal']],body:rows,
       margin:{left:marginX,right:marginX},
-      styles:{font:'helvetica',fontSize:9.5,cellPadding:6,textColor:[30,30,30]},
+      styles:{font:'helvetica',fontSize:9.2,cellPadding:5,textColor:[30,30,30],overflow:'linebreak'},
       headStyles:{fillColor:[15,111,92],textColor:255,fontStyle:'bold'},
-      columnStyles:{1:{halign:'right'},2:{halign:'right'},3:{halign:'right'}},
+      columnStyles:{0:{cellWidth:270},1:{cellWidth:45,halign:'right'},2:{cellWidth:85,halign:'right',overflow:'ellipsize',cellPadding:{left:3,right:3}},3:{cellWidth:85,halign:'right',overflow:'ellipsize',cellPadding:{left:3,right:3}}},
       alternateRowStyles:{fillColor:[247,247,244]}
     });
-
-    let finalY = doc.lastAutoTable.finalY + 24;
-    const total = orderData.items.reduce((s,it)=>s + it.qty*it.price, 0);
+    let finalY=doc.lastAutoTable.finalY+24;
+    const totalOriginal=Number(orderData.totalOriginal)||orderData.items.reduce((s,it)=>s+it.qty*it.price,0);
+    const desconto=Number(orderData.desconto)||0;
+    const total=Number(orderData.totalComDesconto)||Math.max(0,totalOriginal-desconto);
     const pago = Math.max(0, Math.min(total, Number(orderData.valorPago)||0));
     const restante = Math.max(0, total-pago);
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20);
-    doc.text('Valor total: ' + fmtBRL(total), pageW-marginX, finalY, {align:'right'});
-    finalY += 20;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(60);
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(60);
+    doc.text('Preço original: '+fmtBRL(totalOriginal),pageW-marginX,finalY,{align:'right'});finalY+=16;
+    if(desconto>0){doc.text('Desconto: -'+fmtBRL(desconto),pageW-marginX,finalY,{align:'right'});finalY+=16;}
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(20);
+    doc.text('Valor total com desconto: '+fmtBRL(total),pageW-marginX,finalY,{align:'right'});finalY+=20;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(60);
     doc.text('Valor pago: ' + fmtBRL(pago), pageW-marginX, finalY, {align:'right'});
     finalY += 17;
     doc.setFont('helvetica','bold'); doc.setTextColor(restante > 0 ? 179 : 15, restante > 0 ? 38 : 111, restante > 0 ? 30 : 92);
-    doc.text('Valor restante: ' + fmtBRL(restante), pageW-marginX, finalY, {align:'right'});
-    finalY += 20;
+    doc.text('Valor restante: '+fmtBRL(restante),pageW-marginX,finalY,{align:'right'});finalY+=20;
+    if(Number(orderData.parcelas)>0){
+      const juros=Number(orderData.jurosParcelamento)||0,totalParcelado=Number(orderData.totalParcelado)||total;
+      const valorParcela=Number(orderData.valorParcela)||(totalParcelado/Number(orderData.parcelas));
+      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(20);doc.text('Simulação de parcelamento',marginX,finalY);finalY+=14;
+      doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(60);
+      finalY=printWrapped(doc,Number(orderData.parcelas)+'x com '+juros.toFixed(2).replace('.',',')+'% de juros — Total: '+fmtBRL(totalParcelado)+' — Parcela: '+fmtBRL(valorParcela),marginX,finalY,contentWidth,13)+8;
+    }
 
     // Checa se ainda cabe conteúdo antes do fim da página; se não, adiciona nova página.
     function ensureSpace(doc, currentY, needed, pageH){
@@ -1318,9 +1402,10 @@
     const validItems = items.filter(it=>it.desc.trim() !== '');
     if(validItems.length === 0){ showToast('Adicione ao menos um item'); return; }
 
-    const dataVal = document.getElementById('cliData').value || todayISO();
-    const total = validItems.reduce((s,it)=>s + it.qty*it.price, 0);
-    const status = document.getElementById('pedPagamentoStatus').value;
+    const dataVal=document.getElementById('cliData').value||todayISO();
+    const financial=getOrderFinancials();
+    const total=financial.totalComDesconto;
+    const status=document.getElementById('pedPagamentoStatus').value;
     let pago = total;
     if(status === 'parcial'){
       const valor = parseFloat(document.getElementById('pedValorPago').value);
@@ -1345,7 +1430,16 @@
       formaPagamentoRestante:document.getElementById('pedFormaPagamentoRestante')?.value || '',
       tipoDocumento:document.getElementById('pedTipoDocumento').value,
       pagamentoStatus:status,
-      valorPago:pago
+      valorPago:pago,
+      totalOriginal:financial.originalTotal,
+      desconto:financial.desconto,
+      descontoTipo:document.getElementById('pedDescontoTipo').value,
+      descontoInformado:Number(document.getElementById('pedDescontoValor').value)||0,
+      jurosParcelamento:financial.juros,
+      parcelas:financial.parcelas,
+      totalComDesconto:financial.totalComDesconto,
+      totalParcelado:financial.totalParcelado,
+      valorParcela:financial.valorParcela
     };
 
     const built = buildOrderPdfDoc(orderData);
